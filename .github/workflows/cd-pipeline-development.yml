@@ -1,0 +1,45 @@
+name: CI/CD pipeline with docker image for the staging environment
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main"]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Verify context
+      run: |
+        ls -la
+
+    - name: Create credentials.env
+    # > == create or overwrite
+    # >> == add
+      run: |
+        echo "WEB_DB_LINK=${{ secrets.TTCOMPANION2_DB_LINK }}" > credentials.env 
+        echo "JWT_SECRET_KEY=${{ secrets.TTCOMPANION2_JWT_SECRET_KEY }}" >> credentials.env
+        echo "DB_NAME=${{ secrets.TTCOMPANION2_DB_NAME }}" >> credentials.env
+        echo "API_URL=${{ secrets.TTCOMPANION2_API_URL_RENDER }}" >> credentials.env
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        registry: https://index.docker.io/v1/
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PAT }}
+
+    - name: Build and push Docker image
+      run: |
+        docker build --no-cache -t ${{ secrets.DOCKER_USERNAME }}/ttcompanion2:latest . --file Dockerfile
+        docker push ${{ secrets.DOCKER_USERNAME }}/ttcompanion2:latest
+
+    ##### Staging environment
+    - name: Deploy staging to Render
+      run: |
+        curl "${{ secrets.RENDER_DEPLOY_HOOK_LINK }}"

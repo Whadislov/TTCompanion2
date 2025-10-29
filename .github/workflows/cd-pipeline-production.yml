@@ -1,0 +1,87 @@
+name: CI/CD pipeline with docker image for the production environment
+
+on:
+  push:
+    branches: [ "--" ]
+  pull_request:
+    branches: [ "--"]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Verify context
+      run: |
+        ls -la
+
+    - name: Create credentials.env
+    # > == create or overwrite
+    # >> == add
+      run: |
+        echo "WEB_DB_LINK=${{ secrets.TTCOMPANION2_DB_LINK }}" > credentials.env
+        echo "JWT_SECRET_KEY=${{ secrets.TTCOMPANION2_JWT_SECRET_KEY }}" >> credentials.env
+        echo "DB_NAME=${{ secrets.TTCOMPANION2_DB_NAME }}" >> credentials.env
+        echo "API_URL=${{ secrets.TTCOMPANION2_API_URL_CLOUDRUN }}" >> credentials.env
+
+    - name: Run unit tests
+      run: go test -v ./...  # -v == verbose
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        registry: https://index.docker.io/v1/
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PAT }}
+
+    - name: Build and push Docker image
+      run: |
+        docker build --no-cache -t ${{ secrets.DOCKER_USERNAME }}/ttcompanion2:latest . --file Dockerfile
+        docker push ${{ secrets.DOCKER_USERNAME }}/ttcompanion2:latest
+
+    ##### Production environment
+    - name: "Deploy prod: Authenticate to Google Cloud"
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GOOGLE_CLOUD_CREDENTIALS_JSON_KEY2 }}
+
+    - name: "Deploy prod: Set up Google Cloud SDK"
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ secrets.GOOGLE_CLOUD_PROJECT_ID }}
+
+    - name: "Deploy prod: Login to Artifact Registry"
+      run: |
+        gcloud auth configure-docker europe-west9-docker.pkg.dev --quiet
+
+    - name: "Deploy prod: Debug variables"
+      env:
+        PROJECT_ID: ${{ secrets.GOOGLE_CLOUD_PROJECT_ID }}
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      run: |
+        echo "PROJECT_ID=$PROJECT_ID"
+        echo "DOCKER_USERNAME=$DOCKER_USERNAME"
+        echo "Source image: $DOCKER_USERNAME/ttcompanion:latest"
+        echo "Target image: europe-west9-docker.pkg.dev/$PROJECT_ID/ttcompanion-repo/ttcompanion:latest"
+
+    - name: "Deploy prod: Tag and push to Artifact Registry"
+      env:
+        PROJECT_ID: ${{ secrets.GOOGLE_CLOUD_PROJECT_ID }}
+      run: |
+        docker tag "${{ secrets.DOCKER_USERNAME }}/ttcompanion:latest" "europe-west9-docker.pkg.dev/$PROJECT_ID/ttcompanion-repo/ttcompanion:latest"
+        docker push "europe-west9-docker.pkg.dev/$PROJECT_ID/ttcompanion-repo/ttcompanion:latest"
+
+    - name: "Deploy prod: Deploy to Google Cloud Run"
+      env:
+        PROJECT_ID: ${{ secrets.GOOGLE_CLOUD_PROJECT_ID }}
+        REGION: europe-west9
+      run: |
+        gcloud run deploy ttcompanion-prod \
+          --image europe-west9-docker.pkg.dev/$PROJECT_ID/ttcompanion-repo/ttcompanion:latest \
+          --region $REGION \
+          --platform managed \
+          --project $PROJECT_ID \
+          --allow-unauthenticated
