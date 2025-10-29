@@ -3,6 +3,7 @@ FROM golang:1.24.0 AS builder
 WORKDIR /src
 
 COPY api api
+COPY cmd/web cmd/web 
 COPY internal/my_db internal/my_db
 COPY internal/my_functions internal/my_functions
 COPY internal/my_types internal/my_types
