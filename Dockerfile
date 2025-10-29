@@ -3,7 +3,6 @@ FROM golang:1.23.8 AS builder
 WORKDIR /src
 
 COPY api api
-COPY cmd/web/main.go cmd/web/main.go
 COPY internal/my_db internal/my_db
 COPY internal/my_functions internal/my_functions
 COPY internal/my_types internal/my_types
@@ -19,15 +18,10 @@ FROM alpine:latest
 #FROM nginx:latest
 WORKDIR /app
 
-
-# Install Curl for debugging
-RUN apk add --no-cache curl
-
 # Compiled backend
 COPY --from=builder /src/backend ./backend
 
-# Copy WASM + config
-COPY wasm ./wasm
+# Copy config
 COPY credentials.env ./
 COPY config_app.json ./
 
